@@ -126,6 +126,8 @@ my $titleinverted = "Icicle Graph";	#   "    "
 my $searchcolor = "rgb(230,0,230)";	# color for search highlighting
 my $notestext = "";		# embedded notes in SVG
 my $subtitletext = "";		# second level title (optional)
+my $nostrip = 0; # do not strip any function annotations
+my $categorysearch = 0; # show buttons to select categories
 my $help = 0;
 
 sub usage {
@@ -143,7 +145,7 @@ USAGE: $0 [options] infile > outfile.svg\n
 	--nametype TEXT  # name type label (default "Function:")
 	--colors PALETTE # set color palette. choices are: hot (default), mem,
 	                 # io, wakeup, chain, java, js, perl, red, green, blue,
-	                 # aqua, yellow, purple, orange
+	                 # aqua, yellow, purple, orange, rgb
 	--bgcolors COLOR # set background colors. gradient choices are yellow
 	                 # (default), blue, green, grey; flat colors use "#rrggbb"
 	--hash           # colors are keyed by function name hash
@@ -154,6 +156,8 @@ USAGE: $0 [options] infile > outfile.svg\n
 	--flamechart     # produce a flame chart (sort by time, do not merge stacks)
 	--negate         # switch differential hues (blue<->red)
 	--notes TEXT     # add notes comment in SVG (for debugging)
+	--nostrip		 # do not strip any function annotations
+	--category-search # show buttons to select categories
 	--help           # this message
 
 	eg,
@@ -186,6 +190,8 @@ GetOptions(
 	'flamechart'  => \$flamechart,
 	'negate'      => \$negate,
 	'notes=s'     => \$notestext,
+	'no-strip'	  => \$nostrip,
+	'category-search' => \$categorysearch,
 	'help'        => \$help,
 ) or usage();
 $help && usage();
@@ -350,6 +356,12 @@ SVG
 		$self->{svg} .= qq/<text $id x="$x" y="$y" $extra>$str<\/text>\n/;
 	}
 
+	sub searchButton {
+		my ($self, $x, $y, $str, $term) = @_;
+		$x = sprintf "%0.2f", $x;
+		$self->{svg} .= qq/<a onclick="reset_search();search(&quot;$term&quot;)" xlink:href="javascript:void(0)"><text class="searchbutton" x="$x" y="$y">$str<\/text><\/a>\n/;
+	}
+
 	sub svg {
 		my $self = shift;
 		return "$self->{svg}</svg>\n";
@@ -507,6 +519,30 @@ sub color {
 		}
 		# fall-through to color palettes
 	}
+	if (defined $type and $type eq "rgb") {
+        if ($name =~ m:\[r\]$:) {
+            $type = "red";
+        } elsif ($name =~ m:\[g\]$:) {
+            $type = "green";
+        } elsif ($name =~ m:\[b\]$:) {
+            $type = "blue";
+		} elsif ($name =~ m:\[y\]$:) {
+            $type = "yellow";
+		} elsif ($name =~ m:\[p\]$:) {
+            $type = "purple";
+        } elsif ($name =~ m:\[a\]$:) {
+            $type = "aqua";
+        } elsif ($name =~ m:\[o\]$:) {
+            $type = "orange";
+        } elsif ($name =~ m:\[m\]$:) {
+            $type = "magenta";
+        } elsif ($name =~ m:\[f\]$:) {
+            $type = "forest";
+        } else {
+            $type = "gray";
+        }
+		# fall-through to color palettes
+	}
 
 	# color palettes
 	if (defined $type and $type eq "red") {
@@ -545,6 +581,20 @@ sub color {
 		my $g = 90 + int(65 * $v1);
 		return "rgb($r,$g,0)";
 	}
+    if (defined $type and $type eq "magenta") {
+		my $x = 235 + int(55 * $v1);
+		my $b = 70 + int(55 * $v1);
+		return "rgb($x,$b,$x)";
+    }
+    if (defined $type and $type eq "forest") {
+        my $x = 110 + int(65 * $v1);
+        my $b = 25 + int(25 * $v1);
+        return "rgb($b,$x,$b)";
+    }
+    if (defined $type and $type eq "gray") {
+        my $x = 150 + int(55 * $v1);
+        return "rgb($x,$x,$x)";
+    }
 
 	return "rgb(0,0,0)";
 }
@@ -794,6 +844,8 @@ my $inc = <<INC;
 	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
 	.hide { display:none; }
 	.parent { opacity:0.5; }
+	.searchbutton { opacity:0.1 }
+	.searchbutton:hover { opacity:1 }
 </style>
 <script type="text/ecmascript">
 <![CDATA[
@@ -1211,12 +1263,19 @@ if ($palette) {
 	read_palette();
 }
 
+my %categories;
+
 # draw frames
 $im->group_start({id => "frames"});
 while (my ($id, $node) = each %Node) {
 	my ($func, $depth, $etime) = split ";", $id;
 	my $stime = $node->{stime};
 	my $delta = $node->{delta};
+
+	if ($categorysearch) {
+		my @func_categories = $func =~ /\[(\w+)\]/g;
+		@categories{@func_categories} = ();
+	}
 
 	$etime = $timemax if $func eq "" and $depth == 0;
 
@@ -1248,7 +1307,9 @@ while (my ($id, $node) = each %Node) {
 		$escaped_func =~ s/</&lt;/g;
 		$escaped_func =~ s/>/&gt;/g;
 		$escaped_func =~ s/"/&quot;/g;
-		$escaped_func =~ s/_\[[kwij]\]$//;	# strip any annotation
+		if (!$nostrip) {
+			$escaped_func =~ s/_\[[kwij]\]$//;	# strip any annotation
+		}
 		unless (defined $delta) {
 			$info = "$escaped_func ($samples_txt $countname, $pct%)";
 		} else {
@@ -1280,7 +1341,9 @@ while (my ($id, $node) = each %Node) {
 	my $chars = int( ($x2 - $x1) / ($fontsize * $fontwidth));
 	my $text = "";
 	if ($chars >= 3) { # room for one char plus two dots
-		$func =~ s/_\[[kwij]\]$//;	# strip any annotation
+		if (!$nostrip) {
+			$func =~ s/_\[[kwij]\]$//;	# strip any annotation
+		}
 		$text = substr $func, 0, $chars;
 		substr($text, -2, 2) = ".." if $chars < length $func;
 		$text =~ s/&/&amp;/g;
@@ -1292,6 +1355,14 @@ while (my ($id, $node) = each %Node) {
 	$im->group_end($nameattr);
 }
 $im->group_end();
+
+if ($categorysearch) {
+	my $i= 0;
+	for my $category (keys %categories) {
+		$im->searchButton($imagewidth - $xpad - 100, $fontsize * (4 + 2 * $i), "[$category]", "\\\\[$category\\\\]");
+		$i += 1;
+	}
+}
 
 print $im->svg;
 
