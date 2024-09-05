@@ -1243,8 +1243,10 @@ my $inc = <<INC;
 		// display matched percent
 		matchedtxt.classList.remove("hide");
 		var pct = 100 * count / maxwidth;
-		if (pct != 100) pct = pct.toFixed(1)
-		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+		if (pct != 100) pct = pct.toFixed(1);
+		var samples = window.total_samples * count  / maxwidth;
+		samples = Math.floor(samples).toLocaleString();
+		matchedtxt.firstChild.nodeValue = "Matched: " + samples + " $countname, " + pct + "%";
 	}
 ]]>
 </script>
@@ -1257,13 +1259,15 @@ $im->stringTTF("details", $xpad, $imageheight - ($ypad2 / 2), " ");
 $im->stringTTF("unzoom", $xpad, $fontsize * 2, "Reset Zoom", 'class="hide"');
 $im->stringTTF("search", $imagewidth - $xpad - 100, $fontsize * 2, "Search");
 $im->stringTTF("ignorecase", $imagewidth - $xpad - 16, $fontsize * 2, "ic");
-$im->stringTTF("matched", $imagewidth - $xpad - 100, $imageheight - ($ypad2 / 2), " ");
+$im->stringTTF("matched", $imagewidth - $xpad - 230, $imageheight - ($ypad2 / 2), " ");
 
 if ($palette) {
 	read_palette();
 }
 
 my %categories;
+
+my $total_samples = 0;
 
 # draw frames
 $im->group_start({id => "frames"});
@@ -1293,6 +1297,9 @@ while (my ($id, $node) = each %Node) {
 	# Add commas per perlfaq5:
 	# https://perldoc.perl.org/perlfaq5#How-can-I-output-my-numbers-with-commas-added?
 	my $samples = sprintf "%.0f", ($etime - $stime) * $factor;
+	if ($samples > $total_samples) {
+		$total_samples = $samples;
+	}
 	(my $samples_txt = $samples)
 		=~ s/(^[-+]?\d+?(?=(?>(?:\d{3})+)(?!\d))|\G\d{3}(?=\d))/$1,/g;
 
@@ -1355,6 +1362,7 @@ while (my ($id, $node) = each %Node) {
 	$im->group_end($nameattr);
 }
 $im->group_end();
+$im->include("<script>window.total_samples = $total_samples</script>");
 
 if ($categorysearch) {
 	my $i= 0;
