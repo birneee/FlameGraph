@@ -1107,6 +1107,7 @@ my $inc = <<INC;
 				}
 			}
 		}
+		window.zoom_samples = node.getAttribute("_samples")
 		search();
 	}
 	function unzoom(dont_update_text) {
@@ -1118,6 +1119,7 @@ my $inc = <<INC;
 			zoom_reset(el[i]);
 			if(!dont_update_text) update_text(el[i]);
 		}
+		window.zoom_samples = window.total_samples
 		search();
 	}
 	function clearzoom() {
@@ -1244,7 +1246,7 @@ my $inc = <<INC;
 		matchedtxt.classList.remove("hide");
 		var pct = 100 * count / maxwidth;
 		if (pct != 100) pct = pct.toFixed(1);
-		var samples = window.total_samples * count  / maxwidth;
+		var samples = window.zoom_samples * count  / maxwidth;
 		samples = Math.floor(samples).toLocaleString();
 		matchedtxt.firstChild.nodeValue = "Matched: " + samples + " $countname, " + pct + "%";
 	}
@@ -1329,6 +1331,7 @@ while (my ($id, $node) = each %Node) {
 
 	my $nameattr = { %{ $nameattr{$func}||{} } }; # shallow clone
 	$nameattr->{title}       ||= $info;
+	$nameattr->{g_extra} = "_samples=\"$samples\"";
 	$im->group_start($nameattr);
 
 	my $color;
@@ -1362,7 +1365,7 @@ while (my ($id, $node) = each %Node) {
 	$im->group_end($nameattr);
 }
 $im->group_end();
-$im->include("<script>window.total_samples = $total_samples</script>");
+$im->include("<script>window.total_samples = $total_samples; window.zoom_samples = $total_samples;</script>");
 
 if ($categorysearch) {
 	my $i= 0;
